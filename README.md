@@ -1,40 +1,54 @@
-
 # EEG Motor Imagery Classifier
 
 Classifies imagined left- vs. right-hand movement from EEG using the
-PhysioNet EEGBCI Motor Movement/Imagery Dataset.
+[PhysioNet EEG Motor Movement/Imagery Dataset](https://physionet.org/content/eegmmidb/1.0.0/)
+(Schalk et al., 2004) — 64-channel EEG from 109 subjects performing real and
+imagined limb movements, recorded with the BCI2000 system.
 
-## What this does
-- Loads raw EEG (64 channels, PhysioNet EEGBCI dataset) via MNE-Python
-- Band-pass filters to the mu/beta bands (8–30 Hz)
-- Epochs the data around movement-imagery cues
-- Extracts log-variance per channel as a feature vector
-- Trains a k-NN classifier (scikit-learn) to distinguish left vs. right
-- Evaluates with 5-fold cross-validation
-- 
+## Pipeline
+- Load raw EEG (runs 4, 8, 12 — imagined left/right fist) via **MNE-Python**
+- Band-pass filter to the mu/beta bands (8–30 Hz)
+- Epoch the signal around movement-imagery cues (1–4s post-cue)
+- Extract features and classify with **scikit-learn**
+
 ## Results
-Aggregated across 10 subjects (subjects 1–10, runs 4/8/12), giving 450 epochs
-total, each described by 64 log-variance features (one per EEG channel):
-- Single 80/20 train/test split: 0.48 accuracy
-- 5-fold cross-validation: 0.51 mean accuracy (+/- 0.02)
-  - Fold scores: `[0.49, 0.52, 0.48, 0.53, 0.52]`
-This is close to chance level for a binary task (0.50), which is an honest
-first result for a simple log-variance + k-NN baseline on raw, unscaled,
-single-band features. It establishes a working end-to-end pipeline —
-data loading → filtering → epoching → feature extraction → classification
-→ cross-validation — that later, stronger models can be benchmarked against.
 
-## Why this matters
-Motor imagery decoding — inferring which movement someone is imagining,
-purely from their EEG — is the core building block behind non-invasive
-brain-computer interfaces (BCIs), e.g. for controlling prosthetics,
-wheelchairs, or communication devices in patients with motor impairments.
-This project reproduces that basic pipeline on real, publicly available
-EEG recordings (not simulated data), using the same mu/beta band
-sensorimotor rhythms that real BCI systems exploit.
+| Approach | Accuracy |
+|---|---|
+| Naive log-variance, single subject | 0.38 mean CV (chance) |
+| Naive log-variance, pooled (10 subjects) | 0.51 mean CV (chance) |
+| CSP (Common Spatial Patterns), single subject | **0.69 mean CV** |
+| CSP, one filter pooled across 10 subjects | 0.49 mean CV (chance) |
+| CSP, fit individually per subject (10 subjects) | **0.55 average (+/- 0.19), range 0.33–0.96** |
+
+## Why the results look like this (not a bug — this is the real problem)
+
+Raw per-channel log-variance sits at chance: motor imagery signal (mu/beta
+ERD/ERS) is spatially diffuse, so no single electrode captures it cleanly.
+**CSP** — a supervised spatial filter that reweights electrodes to maximize
+the variance difference between classes — recovers real signal for a single
+subject (0.69).
+
+But CSP filters are subject-specific: fitting *one* filter across pooled data
+from 10 different people collapses back to chance (0.49), since each
+person's optimal spatial pattern differs (skull thickness, cortical folding,
+electrode contact). Fitting CSP **individually per subject** instead gives an
+average of 0.55, with a wide spread (0.33–0.96) — consistent with
+**"BCI illiteracy"**, a documented phenomenon where a meaningful fraction of
+people show weak motor-imagery signal even with a well-tuned pipeline.
+
+## Limitations
+- Small sample per subject (45 epochs), so individual scores carry real
+  variance — not a precise measurement of any one person's "true" decodability
+- Only 10 of 109 available subjects used so far
 
 ## Next steps
-- Common Spatial Patterns (CSP) for better features
-- Hyperparameter tuning (GridSearchCV)
-- Compare k-NN vs. logistic regression vs. SVM
+- Scale to more subjects; check whether per-subject accuracy correlates with
+  anything measurable (electrode impedance, session length)
+- Hyperparameter tuning (`GridSearchCV`) on CSP component count and k in k-NN
+- Compare k-NN vs. logistic regression vs. SVM as the final classifier
+- Try Filter-Bank CSP (multiple frequency bands) instead of one fixed 8–30 Hz band
 
+## How to run
+Open `01_motor_imagery_classifier.ipynb` in Google Colab — all dependencies
+install in the first cell.
